@@ -19,27 +19,58 @@ router.post('/forgot-password', async (req, res) => {
     user.resetTokenExpiry = Date.now() + 3600000; // 1 hour expiry
     await user.save();
 
-    const resetLink = `${process.env.FRONTEND_URL}/reset-password/${resetToken}`;
+    const url = process.env.FRONTEND_URL || 'http://localhost:5173'
+    const resetLink = `${url}/reset-password/${resetToken}`;
     await sendEmail(email, 'Password Reset', `Click here to reset your password: ${resetLink}`);
 
     res.json({ message: 'Password reset link sent' });
 });
 
 // Reset Password
-router.post('/reset-password/:token', async (req, res) => {
+router.get('/reset-password/:token', async (req, res) => {
     const { token } = req.params;
-    const { password } = req.body;
-    const user = await User.findOne({ resetToken: token, resetTokenExpiry: { $gt: Date.now() } });
 
+    // Find the user with the matching reset token and ensure it hasn't expired
+    const user = await User.findOne({
+        resetToken: token,
+        resetTokenExpiry: { $gt: Date.now() }  // Check if the token is valid and not expired
+    });
+
+    // If no valid user is found, return an error
     if (!user) return res.status(400).json({ message: 'Invalid or expired token' });
 
-    const hashedPassword = await bcrypt.hash(password, 10);
-    user.password = hashedPassword;
-    user.resetToken = null;
-    user.resetTokenExpiry = null;
-    await user.save();
+    // If the token is valid, send the user details to render the reset password form
+    res.json({
+        message: 'Token is valid. Proceed to reset the password.',
+        userId: user._id  // Optionally, send userId to pre-fill forms or other logic
+    });
+});
 
-    res.json({ message: 'Password successfully reset' });
+// Create a new user
+router.post('/register', async (req, res) => {
+    try {
+        const { email, password } = req.body;
+
+        // Check if user already exists
+        const existingUser = await User.findOne({ email });
+        if (existingUser) {
+            return res.status(400).json({ message: 'User already exists' });
+        }
+
+        // Hash the password
+        const hashedPassword = await bcrypt.hash(password, 10);
+
+        // Create new user
+        const newUser = new User({
+            email,
+            password: hashedPassword
+        });
+
+        await newUser.save();
+        res.status(201).json({ message: 'User created successfully' });
+    } catch (error) {
+        res.status(500).json({ message: 'Server error', error });
+    }
 });
 
 module.exports = router;
