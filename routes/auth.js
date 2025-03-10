@@ -14,12 +14,9 @@ router.post('/forgot-password', async (req, res) => {
 
     if (!user) return res.status(404).json({ message: 'User not found' });
 
-    const resetToken = crypto.randomBytes(32).toString('hex');
-    user.resetToken = resetToken;
-    user.resetTokenExpiry = Date.now() + 3600000; // 1 hour expiry
-    await user.save();
-
-    const url = process.env.FRONTEND_URL || 'http://localhost:5173'
+    const resetToken = jwt.sign({ email }, process.env.JWT_SECRET, { expiresIn: '1h' });
+    
+    const url = process.env.FRONTEND_URL || 'http://localhost:5173';
     const resetLink = `${url}/reset-password/${resetToken}`;
     await sendEmail(email, 'Password Reset', `Click here to reset your password: ${resetLink}`);
 
@@ -30,20 +27,35 @@ router.post('/forgot-password', async (req, res) => {
 router.get('/reset-password/:token', async (req, res) => {
     const { token } = req.params;
 
-    // Find the user with the matching reset token and ensure it hasn't expired
-    const user = await User.findOne({
-        resetToken: token,
-        resetTokenExpiry: { $gt: Date.now() }  // Check if the token is valid and not expired
-    });
+    try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        res.json({
+            message: 'Token is valid. Proceed to reset the password.',
+            email: decoded.email
+        });
+    } catch (error) {
+        res.status(400).json({ message: 'Invalid or expired token' });
+    }
+});
 
-    // If no valid user is found, return an error
-    if (!user) return res.status(400).json({ message: 'Invalid or expired token' });
+// Set New Password
+router.post('/set-new-password', async (req, res) => {
+    const { token, newPassword } = req.body;
 
-    // If the token is valid, send the user details to render the reset password form
-    res.json({
-        message: 'Token is valid. Proceed to reset the password.',
-        userId: user._id  // Optionally, send userId to pre-fill forms or other logic
-    });
+    try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        const user = await User.findOne({ email: decoded.email });
+        
+        if (!user) return res.status(400).json({ message: 'User not found' });
+
+        const hashedPassword = await bcrypt.hash(newPassword, 10);
+        user.password = hashedPassword;
+        await user.save();
+
+        res.json({ message: 'Password reset successfully' });
+    } catch (error) {
+        res.status(400).json({ message: 'Invalid or expired token' });
+    }
 });
 
 // Create a new user
