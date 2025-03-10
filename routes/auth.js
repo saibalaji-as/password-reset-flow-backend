@@ -27,7 +27,7 @@ router.post('/forgot-password', async (req, res) => {
 });
 
 // Reset Password
-router.post('/reset-password/:token', async (req, res) => {
+router.get('/reset-password/:token', async (req, res) => {
     const { token } = req.params;
 
     // Find the user with the matching reset token and ensure it hasn't expired
